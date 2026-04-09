@@ -7,7 +7,8 @@
     <a href="#features">Features</a> &bull;
     <a href="#quick-start">Quick Start</a> &bull;
     <a href="#tools">Tools</a> &bull;
-    <a href="#access-control">Access Control</a>
+    <a href="#access-control">Access Control</a> &bull;
+    <a href="README.ru.md">Документация на русском</a>
   </p>
 </p>
 
