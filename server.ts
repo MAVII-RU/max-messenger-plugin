@@ -202,6 +202,10 @@ const mcp = new Server(
       'Use edit_message for interim progress updates — edits don\'t push-notify.',
       'When a long task completes, send a new reply so the user\'s device pings.',
       '',
+      'Voice messages: If the tag has attachment_kind="voice" and attachment_path, Read that file with whisper to transcribe it:',
+      '  whisper <path> --language ru --model medium --output_format txt --output_dir /tmp/whisper_out',
+      'Images: If the tag has image_path, Read that file to view it.',
+      '',
       "MAX Bot API exposes no history or search — you only see messages as they arrive.",
       "If you need earlier context, ask the user to paste or summarize.",
     ].join('\n'),
@@ -422,18 +426,74 @@ async function startPolling(): Promise<void> {
         // Typing indicator (fire-and-forget)
         maxApiCall('POST', `/chats/${chatId}/actions`, { action: 'typing_on' }).catch(() => {})
 
+        // Process attachments (voice, audio, file, image)
+        const attachments = msg.body?.attachments || []
+        const meta: Record<string, string> = {
+          chat_id: chatId,
+          message_id: messageId,
+          user: senderName,
+          user_id: senderId,
+          ts: new Date(timestamp * 1000).toISOString(),
+        }
+        let contentText = text || ''
+
+        for (const att of attachments) {
+          const attType = att.type // 'audio', 'voice', 'file', 'image', 'video'
+          const payload = att.payload || {}
+          const url = payload.url || payload.link || ''
+
+          if (url && (attType === 'voice' || attType === 'audio')) {
+            // Download voice/audio attachment
+            try {
+              const resp = await fetch(url, { signal: AbortSignal.timeout(15000) })
+              if (resp.ok) {
+                const buf = Buffer.from(await resp.arrayBuffer())
+                const ext = attType === 'voice' ? 'oga' : 'mp3'
+                const filename = `${Date.now()}-${attType}.${ext}`
+                const localPath = join(INBOX_DIR, filename)
+                writeFileSync(localPath, buf)
+                meta.attachment_kind = attType
+                meta.attachment_path = localPath
+                meta.attachment_size = String(buf.length)
+                meta.attachment_mime = attType === 'voice' ? 'audio/ogg' : 'audio/mpeg'
+                if (!contentText) contentText = '(voice message)'
+                process.stderr.write(`max channel: saved ${attType} to ${localPath} (${buf.length} bytes)\n`)
+              }
+            } catch (e) {
+              process.stderr.write(`max channel: failed to download ${attType}: ${e}\n`)
+            }
+          } else if (url && attType === 'image') {
+            // Download image attachment
+            try {
+              const resp = await fetch(url, { signal: AbortSignal.timeout(15000) })
+              if (resp.ok) {
+                const buf = Buffer.from(await resp.arrayBuffer())
+                const filename = `${Date.now()}-image.jpg`
+                const localPath = join(INBOX_DIR, filename)
+                writeFileSync(localPath, buf)
+                meta.image_path = localPath
+                if (!contentText) contentText = '(photo)'
+                process.stderr.write(`max channel: saved image to ${localPath} (${buf.length} bytes)\n`)
+              }
+            } catch (e) {
+              process.stderr.write(`max channel: failed to download image: ${e}\n`)
+            }
+          } else if (url && attType === 'file') {
+            meta.attachment_kind = 'file'
+            meta.attachment_url = url
+            meta.attachment_name = payload.filename || 'file'
+            if (!contentText) contentText = `(file: ${payload.filename || 'attachment'})`
+          }
+        }
+
+        if (!contentText) contentText = '(empty message)'
+
         // Deliver to Claude Code session
         mcp.notification({
           method: 'notifications/claude/channel',
           params: {
-            content: text || '(empty message)',
-            meta: {
-              chat_id: chatId,
-              message_id: messageId,
-              user: senderName,
-              user_id: senderId,
-              ts: new Date(timestamp * 1000).toISOString(),
-            },
+            content: contentText,
+            meta,
           },
         }).catch(err => {
           process.stderr.write(`max channel: failed to deliver to Claude: ${err}\n`)
