@@ -437,6 +437,12 @@ async function startPolling(): Promise<void> {
         }
         let contentText = text || ''
 
+        // Auto-reply "listening" for voice messages before processing
+        const hasVoice = attachments.some((a: any) => a.type === 'voice' || a.type === 'audio')
+        if (hasVoice) {
+          sendMessage(chatId, '⏳ Слушаю голосовое...').catch(() => {})
+        }
+
         for (const att of attachments) {
           const attType = att.type // 'audio', 'voice', 'file', 'image', 'video'
           const payload = att.payload || {}
