@@ -1,0 +1,11 @@
+{
+  "name": "max-messenger",
+  "description": "MAX Messenger channel for Claude Code — messaging bridge for MAX (VK) Bot API.",
+  "version": "1.0.0",
+  "keywords": [
+    "max",
+    "messaging",
+    "channel",
+    "mcp"
+  ]
+}
